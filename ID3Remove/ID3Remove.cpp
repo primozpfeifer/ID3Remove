@@ -1,48 +1,45 @@
-﻿
-#include <print>
-
+﻿#include <print>
 #include <filesystem>
 #include <fstream>
 #include <bitset>
-
 #include <iostream>
 #include <Windows.h>
 
 
-constexpr int _ID3V1_TAG_SIZE = 128;
-constexpr int _ID3V2_HEADER_SIZE = 10;
-constexpr int _APE_FOOTER_SIZE = 32;
+constexpr int _ID3V1_TAG_SIZE		= 128;
+constexpr int _ID3V2_HEADER_SIZE	= 10;
+constexpr int _APE_FOOTER_SIZE		= 32;
 
 
 
 struct id3v1_tag
 {
-	char tag_id[3] = { 0 };
-	char song_name[30] = { 0 };
-	char artist[30] = { 0 };
-	char album_name[30];
-	char year[4] = { 0 };
-	char comment[30] = { 0 };
-	uint8_t genre_id = 0;
+	char		tag_id[3]		= { 0 };
+	char		song_name[30]	= { 0 };
+	char		artist[30]		= { 0 };
+	char		album_name[30];
+	char		year[4]			= { 0 };
+	char		comment[30]		= { 0 };
+	uint8_t		genre_id		= 0;
 };
 
 struct id3v2_header
 {
-	char tag_id[3] = { 0 };
-	uint8_t version = 0;
-	uint8_t revision = 0;
-	uint8_t flags = 0;
-	uint8_t tag_size[4] = { 0 };
+	char		tag_id[3]		= { 0 };
+	uint8_t		version			= 0;
+	uint8_t		revision		= 0;
+	uint8_t		flags			= 0;
+	uint8_t		tag_size[4]		= { 0 };
 };
 
 struct ape_footer
 {
-	char tag_id[8] = { 0 };
-	uint32_t version = 0;
-	uint32_t tag_size = 0;
-	uint32_t item_count = 0;
-	uint32_t flags = 0;
-	uint64_t reserved = 0;
+	char		tag_id[8]		= { 0 };
+	uint32_t	version			= 0;
+	uint32_t	tag_size		= 0;
+	uint32_t	item_count		= 0;
+	uint32_t	flags			= 0;
+	uint64_t	reserved		= 0;
 };
 
 
@@ -58,11 +55,11 @@ int decode_synchsafe(uint8_t _byte_0, uint8_t _byte_1, uint8_t _byte_2, uint8_t 
 
 
 
-bool is_id3v1(std::ifstream& _file_stream)
+int get_id3v1_size(std::ifstream& _file_stream)
 {
 	id3v1_tag buffer;
-	int read_offset = _ID3V1_TAG_SIZE;
-	int read_size = _ID3V1_TAG_SIZE;
+	std::streamsize read_offset = _ID3V1_TAG_SIZE;
+	std::streamsize read_size = _ID3V1_TAG_SIZE;
 	
 	_file_stream.seekg(-read_offset, std::ios::end);
 
@@ -70,18 +67,18 @@ bool is_id3v1(std::ifstream& _file_stream)
 	{
 		if (std::string(buffer.tag_id, 3) == "TAG")
 		{
-			return true;
+			return _ID3V1_TAG_SIZE;
 		}
 	}
 
-	return false;
+	return 0;
 }
 
-bool is_id3v2(std::ifstream& _file_stream)
+int get_id3v2_size(std::ifstream& _file_stream)
 {
 	id3v2_header buffer;
-	int read_offset = 0;
-	int read_size = _ID3V2_HEADER_SIZE;
+	std::streamsize read_offset = 0;
+	std::streamsize read_size = _ID3V2_HEADER_SIZE;
 
 	_file_stream.seekg(read_offset, std::ios::beg);
 
@@ -89,20 +86,18 @@ bool is_id3v2(std::ifstream& _file_stream)
 	{
 		if (std::string(buffer.tag_id, 3) == "ID3")
 		{
-			//int size = decode_synchsafe(buffer.tag_size[3], buffer.tag_size[2], buffer.tag_size[1], buffer.tag_size[0]);
-			return true;
+			return (_ID3V2_HEADER_SIZE + decode_synchsafe(buffer.tag_size[3], buffer.tag_size[2], buffer.tag_size[1], buffer.tag_size[0]));
 		}
 	}
 
-	return false;
+	return 0;
 }
 
-bool is_ape(std::ifstream& _file_stream, bool _id3v1_exists)
+int get_ape_size(std::ifstream& _file_stream, std::streamsize _id3v1_offset)
 {
 	ape_footer buffer;
-	int read_offset = _APE_FOOTER_SIZE;
-	read_offset += _id3v1_exists ? _ID3V1_TAG_SIZE : 0;
-	int read_size = _APE_FOOTER_SIZE;
+	std::streamsize read_offset = _APE_FOOTER_SIZE + _id3v1_offset;
+	std::streamsize read_size = _APE_FOOTER_SIZE;
 
 	_file_stream.seekg(-read_offset, std::ios::end);
 
@@ -110,12 +105,15 @@ bool is_ape(std::ifstream& _file_stream, bool _id3v1_exists)
 	{
 		if (std::string(buffer.tag_id, 8) == "APETAGEX")
 		{
-			//std::bitset<32> flag_bits(buffer.flags);
-			return true;
+			int tag_size = buffer.tag_size;
+			std::bitset<32> flag_bits(buffer.flags);
+			tag_size += flag_bits[31] ? _APE_FOOTER_SIZE : 0;
+			
+			return tag_size;
 		}
 	}
 
-	return false;
+	return 0;
 }
 
 
@@ -125,29 +123,56 @@ int removeTags(std::filesystem::path path)
 	std::ifstream file_stream(path, std::ios::binary);
 	if (!file_stream.is_open())
 	{
-		std::println("Unable to open file!");
+		std::println("Cannot open file!");
 		return -1;
 	}
 
-	bool id3v1_exists = is_id3v1(file_stream) ? true : false;
-	bool id3v2_exists = is_id3v2(file_stream) ? true : false;
-	bool ape_exists = is_ape(file_stream, id3v1_exists) ? true : false;
-
-
-	//if (ID3v1_exists)
-		//std::println("ID3v1 tag found");
-	//if (ID3v2_exists)
-		//std::println("ID3v2 tag found");
-	//if (APE_exists)
-		//std::println("APE tag found");
-
+	std::streamsize trim_beg = 0;
+	std::streamsize trim_end = 0;
+	trim_end += get_id3v1_size(file_stream);
+	trim_beg += get_id3v2_size(file_stream);
+	trim_end += get_ape_size(file_stream, trim_end);
 
 	// removing the tags
 
-	if (id3v1_exists || id3v2_exists || ape_exists)
+	if (trim_beg || trim_end)
 	{
+		// reading contents of the original file
+		file_stream.seekg(0, std::ios::end);
+		std::streamsize size_orig = file_stream.tellg();
+		std::streamsize size_new = size_orig - trim_beg - trim_end;
+		file_stream.seekg(trim_beg, std::ios::beg);
+		std::vector<char> buffer(size_new);
+
+		if (!file_stream.read(buffer.data(), size_new))
+		{
+			std::println("Error reading the file!");
+			file_stream.close();
+			return -1;
+		}
+
+		// rewriting the contents of the file
+		file_stream.close();
+		std::ofstream file_stream(path, std::ios::binary | std::ios::trunc);
+		if (!file_stream.is_open())
+		{
+			std::println("Cannot open file for writing!");
+			return -1;
+		}
+
+		if (!file_stream.write(buffer.data(), size_new))
+		{
+			std::println("Error writing to file!");
+			file_stream.close();
+			return -1;
+		}
+
+		file_stream.close();
+
 		return 1;
 	}
+
+	file_stream.close();
 
 	return 0;
 }
@@ -179,38 +204,35 @@ int main()
 
 	std::print(">> Scanning files for tags...");
 
-	int files_searched = 0;
+	int files_found = 0;
+	int files_scanned = 0;
 	int files_updated = 0;
 	int files_ignored = 0;
 
 	for (const auto& item : std::filesystem::recursive_directory_iterator(input_path, std::filesystem::directory_options::skip_permission_denied))
 	{
+		files_found++;
+
 		if (std::filesystem::is_regular_file(item.path()) &&
 			item.path().extension() == ".mp3" ||
 			item.path().extension() == ".MP3" ||
- 			item.path().extension() == ".mP3" ||
+			item.path().extension() == ".mP3" ||
 			item.path().extension() == ".Mp3")
 		{
-			files_searched++;
+			files_scanned++;
 
 			int ret = removeTags(item.path());
-			
-			if (ret > 0)
-			{
-				files_updated++;
-			}
-			else if (ret < 0)
-			{
-				files_ignored++;
-			}
+				 if (ret > 0) { files_updated++; }
+			else if (ret < 0) {	files_ignored++; }
 		}
 	}
 
 	std::println("");
 	std::println("");
-	std::println("* Files searched : {}", files_searched);
-	std::println("* Files updated  : {}", files_updated);
-	std::println("* Files ignored  : {}", files_ignored);
+	std::println("* Files found   : {}", files_found);
+	std::println("* MP3s scanned  : {}", files_scanned);
+	std::println("* Files updated : {}", files_updated);
+	std::println("* Files ignored : {}", files_ignored);
 	std::println("");
-	std::println("*** Scan complete ***");
+	std::println("----- Scan complete -----");
 }
