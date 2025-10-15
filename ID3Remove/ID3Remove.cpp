@@ -1,56 +1,61 @@
-﻿#include <print>
+﻿#pragma once
+
+#include <print>
 #include <filesystem>
 #include <fstream>
 #include <bitset>
 #include <iostream>
 #include <Windows.h>
+#include <vector>
+#include <array>
 
 
-constexpr int _ID3V1_TAG_SIZE		= 128;
-constexpr int _ID3V2_HEADER_SIZE	= 10;
-constexpr int _APE_FOOTER_SIZE		= 32;
+
+constexpr int		_ID3V1_TAG_SIZE		= 128;
+constexpr int		_ID3V2_HEADER_SIZE	= 10;
+constexpr int		_APE_FOOTER_SIZE	= 32;
 
 
 
 struct id3v1_tag
 {
-	char		tag_id[3]		= { 0 };
-	char		song_name[30]	= { 0 };
-	char		artist[30]		= { 0 };
-	char		album_name[30];
-	char		year[4]			= { 0 };
-	char		comment[30]		= { 0 };
-	uint8_t		genre_id		= 0;
+	std::array<char, 3>		tag_id		= {};
+	std::array<char, 30>	song_name	= {};
+	std::array<char, 30>	artist		= {};
+	std::array<char, 30>	album_name	= {};
+	std::array<char, 4>		year		= {};
+	std::array<char, 30>	comment		= {};
+	uint8_t					genre_id	= {};
 };
 
 struct id3v2_header
 {
-	char		tag_id[3]		= { 0 };
-	uint8_t		version			= 0;
-	uint8_t		revision		= 0;
-	uint8_t		flags			= 0;
-	uint8_t		tag_size[4]		= { 0 };
+	std::array<char, 3>		tag_id		= {};
+	uint8_t					version		= {};
+	uint8_t					revision	= {};
+	uint8_t					flags		= {};
+	std::array<uint8_t, 4>	tag_size	= {};
 };
 
 struct ape_footer
 {
-	char		tag_id[8]		= { 0 };
-	uint32_t	version			= 0;
-	uint32_t	tag_size		= 0;
-	uint32_t	item_count		= 0;
-	uint32_t	flags			= 0;
-	uint64_t	reserved		= 0;
+	std::array<char, 8>		tag_id		= {};
+	uint32_t				version		= {};
+	uint32_t				tag_size	= {};
+	uint32_t				item_count	= {};
+	uint32_t				flags		= {};
+	uint64_t				reserved	= {};
 };
 
 
 
-int decode_synchsafe(uint8_t _byte_0, uint8_t _byte_1, uint8_t _byte_2, uint8_t _byte_3)
+int decode_synchsafe(std::array<uint8_t, 4> _byte)
 {
 	return
-		(static_cast<uint32_t>(_byte_0) |
-		(static_cast<uint32_t>(_byte_1) << 7) |
-		(static_cast<uint32_t>(_byte_2) << 15) |
-		(static_cast<uint32_t>(_byte_3) << 23));
+		(static_cast<uint32_t>(_byte[3]) |
+		(static_cast<uint32_t>(_byte[2]) << 7) |
+		(static_cast<uint32_t>(_byte[1]) << 15) |
+		(static_cast<uint32_t>(_byte[0]) << 23));
 }
 
 
@@ -65,7 +70,7 @@ int get_id3v1_size(std::ifstream& _file_stream)
 
 	if (_file_stream.read(reinterpret_cast<char*>(&buffer), read_size))
 	{
-		if (std::string(buffer.tag_id, 3) == "TAG")
+		if (std::string(buffer.tag_id.data(), 3) == "TAG")
 		{
 			return _ID3V1_TAG_SIZE;
 		}
@@ -84,9 +89,9 @@ int get_id3v2_size(std::ifstream& _file_stream)
 
 	if (_file_stream.read(reinterpret_cast<char*>(&buffer), read_size))
 	{
-		if (std::string(buffer.tag_id, 3) == "ID3")
+		if (std::string(buffer.tag_id.data(), 3) == "ID3")
 		{
-			return (_ID3V2_HEADER_SIZE + decode_synchsafe(buffer.tag_size[3], buffer.tag_size[2], buffer.tag_size[1], buffer.tag_size[0]));
+			return (_ID3V2_HEADER_SIZE + decode_synchsafe(buffer.tag_size));
 		}
 	}
 
@@ -103,7 +108,7 @@ int get_ape_size(std::ifstream& _file_stream, std::streamsize _id3v1_offset)
 
 	if (_file_stream.read(reinterpret_cast<char*>(&buffer), read_size))
 	{
-		if (std::string(buffer.tag_id, 8) == "APETAGEX")
+		if (std::string(buffer.tag_id.data(), 8) == "APETAGEX")
 		{
 			int tag_size = buffer.tag_size;
 			std::bitset<32> flag_bits(buffer.flags);
@@ -154,6 +159,7 @@ int removeTags(std::filesystem::path path)
 		// rewriting the contents of the file
 		file_stream.close();
 		std::ofstream file_stream(path, std::ios::binary | std::ios::trunc);
+		file_stream.close();
 		if (!file_stream.is_open())
 		{
 			std::println("Cannot open file for writing!");
@@ -232,7 +238,7 @@ int main()
 	std::println("* Files found   : {}", files_found);
 	std::println("* MP3s scanned  : {}", files_scanned);
 	std::println("* Files updated : {}", files_updated);
-	std::println("* Files ignored : {}", files_ignored);
+	std::println("* Files ignored : {} (access/read/write errors)", files_ignored);
 	std::println("");
 	std::println("----- Scan complete -----");
 }
